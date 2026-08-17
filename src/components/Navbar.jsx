@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
-import { Landmark, Home, Table2, FileDown, BarChart3, Menu, X, Sun, Moon } from 'lucide-react'
+import { Radar, Home, Table2, FileDown, BarChart3, Menu, X, Sun, Moon, Wifi, WifiOff } from 'lucide-react'
 import { useState } from 'react'
-import { useTheme } from '../hooks/useTheme'
+import { useTheme } from '../context/ThemeContext'
 
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: Home },
@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { id: 'analyst', label: 'Data Analyst', icon: BarChart3 },
 ]
 
-export default function Navbar({ active, onNavigate }) {
+export default function Navbar({ active, onNavigate, status }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { theme, toggleTheme } = useTheme()
 
@@ -24,11 +24,11 @@ export default function Navbar({ active, onNavigate }) {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-2.5">
           <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
-            <Landmark size={19} strokeWidth={2} />
+            <Radar size={20} strokeWidth={2} />
             <span className="absolute inset-0 rounded-lg border border-brand/40 animate-pulseRing" />
           </div>
           <div className="leading-tight">
-            <p className="font-display text-sm font-semibold text-ink">BRI REGION 12 SURABAYA</p>
+            <p className="font-display text-sm font-semibold text-ink">BRI Region 12 Surabaya</p>
             <p className="font-mono text-[10px] uppercase tracking-widest text-ink-faint">
               Operation, Service, and E-Channel (OSE)
             </p>
@@ -44,7 +44,7 @@ export default function Navbar({ active, onNavigate }) {
                 key={item.id}
                 onClick={() => handleClick(item.id)}
                 className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'text-white' : 'text-ink-muted hover:text-ink'
+                  isActive ? 'text-void' : 'text-ink-muted hover:text-ink'
                 }`}
               >
                 {isActive && (
@@ -62,10 +62,21 @@ export default function Navbar({ active, onNavigate }) {
         </nav>
 
         <div className="flex items-center gap-2">
+          {status && (
+            <span
+              className={`hidden items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-widest sm:flex ${
+                status === 'live' ? 'text-pass' : status === 'mock' ? 'text-warn' : 'text-ink-faint'
+              }`}
+              title={status === 'live' ? 'Tersambung ke Google Sheet' : status === 'mock' ? 'Mode demo (belum tersambung)' : 'Menyambungkan...'}
+            >
+              {status === 'live' ? <Wifi size={12} /> : <WifiOff size={12} />}
+              {status === 'live' ? 'Live' : status === 'mock' ? 'Demo' : '...'}
+            </span>
+          )}
           <button
             onClick={toggleTheme}
             aria-label="Ganti tema terang/gelap"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-ink-muted transition-colors hover:border-brand/50 hover:text-brand"
+            className="rounded-lg border border-border p-2 text-ink-muted transition-colors hover:border-brand/50 hover:text-brand"
           >
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>

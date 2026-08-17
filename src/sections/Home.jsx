@@ -12,8 +12,8 @@ const fadeUp = {
   show: { opacity: 1, y: 0, transition: { duration: 0.6 } },
 }
 
-export default function Home({ matrixRows, onNavigate }) {
-  const summary = computeSummary(matrixRows)
+export default function Home({ reportRows, onNavigate }) {
+  const summary = computeSummary(reportRows)
 
   return (
     <div className="relative">
@@ -46,24 +46,23 @@ export default function Home({ matrixRows, onNavigate }) {
               variants={fadeUp}
               className="mt-5 font-display text-4xl font-semibold leading-[1.1] text-ink md:text-6xl"
             >
-              Kepatuhan roleplay,{' '}
+              BRI REGION 12{' '}
               <span className="relative inline-block text-brand">
-                terpantau real-time
+                SURABAYA
                 <svg
                   className="absolute -bottom-2 left-0 w-full"
                   height="8"
                   viewBox="0 0 200 8"
                   preserveAspectRatio="none"
                 >
-                  <path d="M0 4 Q 50 0, 100 4 T 200 4" stroke="#00529C" strokeWidth="2" fill="none" opacity="0.5" />
+                  <path d="M0 4 Q 50 0, 100 4 T 200 4" stroke="#005BAB" strokeWidth="2" fill="none" opacity="0.5" />
                 </svg>
               </span>
             </motion.h1>
 
             <motion.p variants={fadeUp} className="mt-6 max-w-xl text-base leading-relaxed text-ink-muted md:text-lg">
-              Satu ruang kendali untuk memantau respons, menganalisis performa, dan mengekspor
-              laporan final roleplay seluruh KC Induk &amp; UKO di bawah BRI Region 12 Surabaya —
-              lengkap dengan audit trail dan visualisasi kepatuhan per parameter.
+              Pantau respons, analisis performa, dan unduh laporan final roleplay seluruh KC
+              Induk &amp; UKO — dalam satu ruang kendali.
             </motion.p>
 
             <motion.div variants={fadeUp} className="mt-8 flex flex-wrap gap-3">

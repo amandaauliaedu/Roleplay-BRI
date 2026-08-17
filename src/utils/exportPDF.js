@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { IDENTITY_COLUMNS, ROLEPLAY_PARAM_COLUMNS, VIDEO_COLUMN, REPORT_PALETTE, getValueStyle } from '../data/config'
+import { groupReportRowsByKc } from './dataProcessor'
 
 function hexToRgb(hexColor) {
   const c = hexColor.replace('#', '')
@@ -9,45 +10,27 @@ function hexToRgb(hexColor) {
 
 const PARAM_KEYS = [...ROLEPLAY_PARAM_COLUMNS.map((c) => c.key), VIDEO_COLUMN.key]
 
-function navyHeader() {
-  return { fillColor: hexToRgb(REPORT_PALETTE.headerNavy), textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle' }
-}
-function bannerHeader(fontSize = 8.5) {
-  return { fillColor: hexToRgb(REPORT_PALETTE.bannerBlue), textColor: hexToRgb(REPORT_PALETTE.bannerBlueText), fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize }
-}
-function tealHeader() {
-  return { fillColor: hexToRgb(REPORT_PALETTE.videoTeal), textColor: hexToRgb(REPORT_PALETTE.videoTealText), fontStyle: 'bold', halign: 'center', valign: 'middle' }
-}
-
-// groups: [{ kcInduk, rows }]
-export function exportToPDF(groups, periodLabel = 'Semua Periode', filename = 'REPORT_FINAL_ROLEPLAY') {
+// Ekspor PDF mengikuti PERSIS pola dokumen referensi "REPORT FINAL ROLEPLAY":
+// tiap KC Induk mendapat blok tabel + header sendiri (dengan page break di
+// antaranya), sama seperti pada dokumen contoh yang dilampirkan.
+export function exportToPDF(rows, periodLabel = 'Semua Periode', filename = 'REPORT_FINAL_ROLEPLAY') {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
-  const pageWidth = doc.internal.pageSize.getWidth()
+  const groups = groupReportRowsByKc(rows)
 
-  doc.setFontSize(15)
-  doc.setFont('helvetica', 'bold')
-  doc.text('REPORT FINAL ROLEPLAY', pageWidth / 2, 36, { align: 'center' })
+  let startY = 36
 
-  let cursorY = 55
-
-  groups.forEach((group, gIdx) => {
-    if (gIdx > 0) {
-      const estRowHeight = 22
-      const estHeight = group.rows.length * estRowHeight + 60
-      if (cursorY + estHeight > doc.internal.pageSize.getHeight() - 40) {
-        doc.addPage()
-        cursorY = 40
-      } else {
-        cursorY += 18
-      }
+  groups.forEach((group, groupIdx) => {
+    if (groupIdx > 0) {
+      doc.addPage()
+      startY = 36
     }
 
-    doc.setFontSize(10.5)
+    doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...hexToRgb(REPORT_PALETTE.headerNavy))
-    doc.text(group.kcInduk, 40, cursorY)
-    doc.setTextColor(0, 0, 0)
-    cursorY += 8
+    doc.text('REPORT FINAL ROLEPLAY', doc.internal.pageSize.getWidth() / 2, startY, { align: 'center' })
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`KC Induk: ${group.kcInduk}`, doc.internal.pageSize.getWidth() / 2, startY + 14, { align: 'center' })
 
     const headRow1 = [
       { content: 'Branch Code', rowSpan: 2, styles: navyHeader() },
@@ -80,7 +63,7 @@ export function exportToPDF(groups, periodLabel = 'Semua Periode', filename = 'R
     })
 
     autoTable(doc, {
-      startY: cursorY,
+      startY: startY + 30,
       head: [headRow1, headRow2],
       body,
       theme: 'grid',
@@ -90,12 +73,29 @@ export function exportToPDF(groups, periodLabel = 'Semua Periode', filename = 'R
         1: { cellWidth: 110 },
         2: { cellWidth: 95 },
       },
-      margin: { left: 40, right: 40 },
+      didDrawPage: () => {
+        // Footer tampil di SETIAP halaman fisik (termasuk halaman lanjutan
+        // saat satu KC Induk meluber ke >1 halaman) — mempertegas bahwa
+        // satu halaman = satu KC Induk, tidak pernah digabung dengan KC lain.
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const pageHeight = doc.internal.pageSize.getHeight()
+        doc.setFontSize(8)
+        doc.setTextColor(120, 120, 120)
+        doc.text(`Halaman khusus KC Induk: ${group.kcInduk}`, 40, pageHeight - 16)
+        doc.text(periodLabel, pageWidth - 40, pageHeight - 16, { align: 'right' })
+      },
     })
-
-    cursorY = doc.lastAutoTable.finalY + 4
   })
 
-  const dateStr = new Date().toISOString().slice(0, 10)
-  doc.save(`${filename}_${dateStr}.pdf`)
+  doc.save(`${filename}.pdf`)
+}
+
+function navyHeader() {
+  return { fillColor: hexToRgb(REPORT_PALETTE.headerNavy), textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle' }
+}
+function bannerHeader(fontSize = 8.5) {
+  return { fillColor: hexToRgb(REPORT_PALETTE.bannerBlue), textColor: hexToRgb(REPORT_PALETTE.bannerBlueText), fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize }
+}
+function tealHeader() {
+  return { fillColor: hexToRgb(REPORT_PALETTE.videoTeal), textColor: hexToRgb(REPORT_PALETTE.videoTealText), fontStyle: 'bold', halign: 'center', valign: 'middle' }
 }

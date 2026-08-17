@@ -1,53 +1,12 @@
-import {
-  COLUMN_MAP,
-  PARAMETER_KEYS,
-  JABATAN_PARAM_MAP,
-  VIDEO_PREMISES_MATCH,
-  KC_ONLY_PARAMS,
-} from '../data/config'
-import { MASTER_DATA, MASTER_BY_KODE_UKO } from '../data/masterData'
+import { PARAMETER_KEYS, COLUMN_MAP, jabatanToMetric } from '../data/config'
+import { MASTER_DATA, KC_INDUK_ORDER, UKO_ORDER_BY_KC, findUkoByKode, normalizeCode } from '../data/masterData'
+import { parseIndoDate, slugifyIndoDate } from './dateUtils'
 
-const MONTHS_ID = {
-  januari: 0, februari: 1, maret: 2, april: 3, mei: 4, juni: 5,
-  juli: 6, agustus: 7, september: 8, oktober: 9, november: 10, desember: 11,
-}
-
-// Parse tanggal berformat "Rabu, 24 Juni 2026" -> Date. Fallback: coba Date bawaan.
-export function parseIndoDate(text) {
-  if (!text) return null
-  const cleaned = String(text).replace(/^[A-Za-z]+,\s*/, '').trim() // buang nama hari
-  const m = cleaned.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/)
-  if (m) {
-    const day = parseInt(m[1], 10)
-    const month = MONTHS_ID[m[2].toLowerCase()]
-    const year = parseInt(m[3], 10)
-    if (month !== undefined) return new Date(year, month, day)
-  }
-  const fallback = new Date(text)
-  return Number.isNaN(fallback.getTime()) ? null : fallback
-}
-
-function normalizeText(v) {
-  return String(v || '').toLowerCase().trim()
-}
-
-export function classifyJabatan(jabatan) {
-  const text = normalizeText(jabatan)
-  for (const rule of JABATAN_PARAM_MAP) {
-    if (rule.match.some((m) => text.includes(m.trim()))) return rule.param
-  }
-  return null
-}
-
-export function isVideoPremises(pilihanVideo) {
-  const text = normalizeText(pilihanVideo)
-  return VIDEO_PREMISES_MATCH.some((m) => text.includes(m))
-}
-
-// --------------------------------------------------------------------------
-// Parsing hasil CSV (Papaparse) mentah dari Google Sheets -> shape internal
-// Setiap baris = SATU submisi roleplay mentah (bukan matriks agregat).
-// --------------------------------------------------------------------------
+// ============================================================================
+// 1) PARSING RESPONS MENTAH GOOGLE FORM (Live Response)
+// ============================================================================
+// Setiap baris = satu submission video roleplay/premises apa adanya, PERSIS
+// seperti tampil di sheet "Form_Responses" (tidak diagregasi).
 export function normalizeSheetRows(rawRows) {
   const headerKeys = Object.keys(rawRows[0] || {})
 
@@ -60,45 +19,143 @@ export function normalizeSheetRows(rawRows) {
   })
 
   return rawRows
-    .filter((row) => row[resolvedMap.kodeUko])
+    .filter((row) => Object.values(row).some((v) => String(v || '').trim() !== ''))
     .map((row, idx) => {
-      const kodeUko = String(row[resolvedMap.kodeUko] || '').trim().padStart(4, '0')
-      const master = MASTER_BY_KODE_UKO[kodeUko]
+      const kodeUko = row[resolvedMap.kodeUko] || ''
+      const master = findUkoByKode(kodeUko)
+      const timestampRaw = row[resolvedMap.timestamp] || ''
+      const tanggalRaw = row[resolvedMap.tanggalPelaksanaan] || ''
       return {
-        id: `SUB-${idx}-${kodeUko}`,
-        timestamp: row[resolvedMap.timestamp] || '',
-        jenisUko: row[resolvedMap.jenisUko] || master?.jenisUko || '-',
-        tanggalPelaksanaan: row[resolvedMap.tanggalPelaksanaan] || '',
-        kodeUko,
-        namaUko: row[resolvedMap.namaUko] || master?.namaUker || '-',
-        kcInduk: master?.namaCabang || 'Tidak Diketahui',
+        id: `LR-${idx}-${kodeUko}`,
+        timestamp: timestampRaw,
+        timestampDate: parseIndoDate(timestampRaw),
+        jenisUko: master?.jenisUko || row[resolvedMap.jenisUko] || '',
+        tanggalPelaksanaan: tanggalRaw,
+        tanggalPelaksanaanDate: parseIndoDate(tanggalRaw),
+        kodeUko: kodeUko,
+        kodeUkoNorm: normalizeCode(kodeUko),
+        namaUko: master?.namaUker || row[resolvedMap.namaUko] || '',
         jabatan: row[resolvedMap.jabatan] || '',
         pilihanVideo: row[resolvedMap.pilihanVideo] || '',
         pnFl: row[resolvedMap.pnFl] || '',
         namaFl: row[resolvedMap.namaFl] || '',
         uploadVideo: row[resolvedMap.uploadVideo] || '',
         keteranganPremises: row[resolvedMap.keteranganPremises] || '',
+        kcInduk: master?.namaCabang || 'Tidak dikenali',
+        branchCode: master?.kodeBranch || '',
       }
+    })
+    // Terbaru & berurutan: submission dengan Timestamp paling baru tampil
+    // paling atas. Pakai timestampDate hasil parse eksplisit (bukan
+    // `new Date(str)` bawaan) supaya format DD/MM/YYYY khas Google Form
+    // Indonesia tidak salah urut.
+    .sort((a, b) => {
+      const tb = b.timestampDate ? b.timestampDate.getTime() : 0
+      const ta = a.timestampDate ? a.timestampDate.getTime() : 0
+      return tb - ta
     })
 }
 
+// ============================================================================
+// 2) AGREGASI -> MATRIKS "REPORT FINAL ROLEPLAY" (per KC Induk, per UKO)
+// ============================================================================
+// Untuk setiap Kode UKO pada MASTER DATA, hitung jumlah video roleplay yang
+// sesuai per parameter (CS / Satpam jabatan CS / Satpam jabatan Teller /
+// Satpam Only / Teller / UB) berdasarkan field "Jabatan" pada submission,
+// dan jumlah "Video Premises" dari field "Pilihan Video".
+//
+// Nilai sel: null = N/A (UKO tsb belum pernah submit APAPUN — belum
+// terpantau roleplay-nya sama sekali), 0..n = jumlah video yang sudah masuk.
+// Aturan "N/A vs 0" ini bisa disesuaikan jika ada ketentuan applicability
+// resmi per Jenis UKO (KC/KCP/KK/UNIT) — cukup ubah fungsi `buildParamSet`.
+export function buildReportRows(liveRows) {
+  const byUko = new Map() // kodeUkoNorm -> submissions[]
+  liveRows.forEach((row) => {
+    if (!row.kodeUkoNorm) return
+    if (!byUko.has(row.kodeUkoNorm)) byUko.set(row.kodeUkoNorm, [])
+    byUko.get(row.kodeUkoNorm).push(row)
+  })
+
+  const rows = []
+  MASTER_DATA.forEach((uko) => {
+    const submissions = byUko.get(uko.kodeUkoNorm) || []
+    rows.push({
+      id: `RPT-${uko.kodeUkoNorm}`,
+      branchCode: uko.kodeBranch,
+      namaUko: uko.namaUker,
+      kcInduk: uko.namaCabang,
+      jenisUko: uko.jenisUko,
+      kodeUko: uko.kodeUko,
+      ...buildParamSet(submissions),
+    })
+  })
+  return rows
+}
+
+function buildParamSet(submissions) {
+  const hasAnyData = submissions.length > 0
+  const counts = { cs: 0, satpamCS: 0, satpamTeller: 0, satpamOnly: 0, teller: 0, ub: 0, videoPremises: 0 }
+
+  submissions.forEach((s) => {
+    const isPremises = String(s.pilihanVideo || '').toLowerCase().includes('premises')
+    if (isPremises) {
+      counts.videoPremises += 1
+      return
+    }
+    const metric = jabatanToMetric(s.jabatan)
+    if (metric) counts[metric] += 1
+  })
+
+  if (!hasAnyData) {
+    return { cs: null, satpamCS: null, satpamTeller: null, satpamOnly: null, teller: null, ub: null, videoPremises: null }
+  }
+  return counts
+}
+
+// Urutkan rows agregat sesuai urutan resmi KC Induk & UKO pada master data
+// (dipakai untuk preview & export supaya identik dengan dokumen asli).
+export function sortReportRowsByMasterOrder(rows) {
+  const rank = new Map()
+  let i = 0
+  KC_INDUK_ORDER.forEach((kc) => {
+    ;(UKO_ORDER_BY_KC[kc] || []).forEach((kodeUkoNorm) => {
+      rank.set(kodeUkoNorm, i++)
+    })
+  })
+  return [...rows].sort((a, b) => (rank.get(normalizeCode(a.kodeUko)) ?? 0) - (rank.get(normalizeCode(b.kodeUko)) ?? 0))
+}
+
+// Kelompokkan rows agregat per KC Induk (dipakai export Excel/PDF supaya
+// setiap KC Induk berada di grup/halamannya sendiri, seperti dokumen asli).
+export function groupReportRowsByKc(rows) {
+  const sorted = sortReportRowsByMasterOrder(rows)
+  const groups = []
+  let current = null
+  sorted.forEach((row) => {
+    if (!current || current.kcInduk !== row.kcInduk) {
+      current = { kcInduk: row.kcInduk, rows: [] }
+      groups.push(current)
+    }
+    current.rows.push(row)
+  })
+  return groups
+}
+
 // --------------------------------------------------------------------------
-// Filtering baris mentah (Live Response)
+// Filtering (dipakai baik untuk Live Response mentah maupun rows agregat)
 // --------------------------------------------------------------------------
-export function filterRawRows(rows, { kcInduk, jenisUko, kodeUko, dateFrom, dateTo, search } = {}) {
+export function filterRows(rows, { kcInduk, namaUko, branchCode, jenisUko, dateFrom, dateTo, search, timestampKey = 'timestampDate' } = {}) {
   return rows.filter((row) => {
     if (kcInduk && kcInduk !== 'Semua' && row.kcInduk !== kcInduk) return false
+    if (namaUko && namaUko !== 'Semua' && row.namaUko !== namaUko) return false
+    if (branchCode && branchCode !== 'Semua' && row.branchCode !== branchCode) return false
     if (jenisUko && jenisUko !== 'Semua' && row.jenisUko !== jenisUko) return false
-    if (kodeUko && kodeUko !== 'Semua' && row.kodeUko !== kodeUko) return false
-    if (dateFrom || dateTo) {
-      const d = parseIndoDate(row.tanggalPelaksanaan)
-      if (!d) return false
-      if (dateFrom && d < new Date(dateFrom)) return false
-      if (dateTo && d > new Date(new Date(dateTo).setHours(23, 59, 59))) return false
-    }
+    const rowDate = row[timestampKey]
+    if (dateFrom && rowDate && rowDate < new Date(dateFrom)) return false
+    if (dateTo && rowDate && rowDate > new Date(new Date(dateTo).setHours(23, 59, 59))) return false
     if (search) {
       const q = search.toLowerCase()
-      const haystack = `${row.kcInduk} ${row.namaUko} ${row.kodeUko} ${row.jabatan} ${row.namaFl}`.toLowerCase()
+      const haystack = `${row.kcInduk} ${row.namaUko} ${row.branchCode} ${row.jabatan || ''} ${row.namaFl || ''} ${row.pnFl || ''}`.toLowerCase()
       if (!haystack.includes(q)) return false
     }
     return true
@@ -106,61 +163,8 @@ export function filterRawRows(rows, { kcInduk, jenisUko, kodeUko, dateFrom, date
 }
 
 // --------------------------------------------------------------------------
-// AGREGASI: submisi mentah -> matriks REPORT FINAL ROLEPLAY (satu baris/unit)
-// units: daftar unit master data yang ingin ditampilkan (default: semua)
-// --------------------------------------------------------------------------
-export function buildReportMatrix(rawRows, { units = MASTER_DATA } = {}) {
-  // Kelompokkan submisi mentah per Kode UKO untuk lookup cepat
-  const byUnit = {}
-  rawRows.forEach((row) => {
-    if (!byUnit[row.kodeUko]) byUnit[row.kodeUko] = []
-    byUnit[row.kodeUko].push(row)
-  })
-
-  return units.map((unit) => {
-    const submissions = byUnit[unit.kodeUko] || []
-    const values = {}
-
-    PARAMETER_KEYS.filter((k) => k !== 'videoPremises').forEach((param) => {
-      const isKcOnly = KC_ONLY_PARAMS.includes(param)
-      if (isKcOnly && unit.jenisUko !== 'KC') {
-        values[param] = null
-        return
-      }
-      const count = submissions.filter((s) => classifyJabatan(s.jabatan) === param).length
-      values[param] = count
-    })
-
-    const videoCount = submissions.filter((s) => isVideoPremises(s.pilihanVideo)).length
-    values.videoPremises = videoCount > 0 ? videoCount : unit.jenisUko === 'KC' ? 0 : null
-
-    return {
-      id: `MTX-${unit.kodeUko}`,
-      branchCode: unit.kodeUko,
-      namaUko: unit.namaUker,
-      kcInduk: unit.namaCabang,
-      jenisUko: unit.jenisUko,
-      kodeBranch: unit.kodeBranch,
-      ...values,
-    }
-  })
-}
-
-// Kelompokkan baris matriks per KC Induk (mempertahankan urutan master data:
-// KC induk lebih dulu, lalu KCP/KK/UNIT) -- dipakai untuk preview & export
-// supaya tabel tersusun per-cabang seperti dokumen resmi.
-export function groupMatrixByKcInduk(matrixRows) {
-  const groups = new Map()
-  matrixRows.forEach((row) => {
-    if (!groups.has(row.kcInduk)) groups.set(row.kcInduk, [])
-    groups.get(row.kcInduk).push(row)
-  })
-  return [...groups.entries()].map(([kcInduk, rows]) => ({ kcInduk, rows }))
-}
-
-// --------------------------------------------------------------------------
-// Skor kepatuhan per baris matriks (persentase parameter APPLICABLE yang
-// terpenuhi >=1). Parameter bernilai null (N/A) dikeluarkan dari perhitungan.
+// Skor kepatuhan per baris agregat (persentase parameter APPLICABLE yang
+// terpenuhi >= 1). Parameter bernilai null (N/A) dikeluarkan dari perhitungan.
 // --------------------------------------------------------------------------
 export function rowComplianceScore(row) {
   const applicable = PARAMETER_KEYS.filter((k) => row[k] !== null && row[k] !== undefined)
@@ -170,18 +174,23 @@ export function rowComplianceScore(row) {
 }
 
 // --------------------------------------------------------------------------
-// Ringkasan untuk Quick Stat Cards (Home) -- rows = baris matriks
+// Ringkasan untuk Quick Stat Cards (Home) — dihitung dari rows agregat
 // --------------------------------------------------------------------------
 export function computeSummary(rows) {
-  const totalEvaluasi = rows.length
+  const totalUko = rows.length
+  const totalVideo = rows.reduce(
+    (sum, r) => sum + PARAMETER_KEYS.reduce((s, k) => s + (Number(r[k]) > 0 ? Number(r[k]) : 0), 0),
+    0,
+  )
   const kcActive = new Set(rows.map((r) => r.kcInduk)).size
-  const avgScore = totalEvaluasi
-    ? Math.round(rows.reduce((sum, r) => sum + rowComplianceScore(r), 0) / totalEvaluasi)
+  const evaluated = rows.filter((r) => PARAMETER_KEYS.some((k) => r[k] !== null))
+  const avgScore = evaluated.length
+    ? Math.round(evaluated.reduce((sum, r) => sum + rowComplianceScore(r), 0) / evaluated.length)
     : 0
-  const lulus = rows.filter((r) => rowComplianceScore(r) >= 85).length
-  const passRate = totalEvaluasi ? Math.round((lulus / totalEvaluasi) * 100) : 0
+  const lulus = evaluated.filter((r) => rowComplianceScore(r) >= 85).length
+  const passRate = evaluated.length ? Math.round((lulus / evaluated.length) * 100) : 0
 
-  return { totalEvaluasi, kcActive, avgScore, passRate }
+  return { totalEvaluasi: totalVideo, totalUko, kcActive, avgScore, passRate }
 }
 
 // --------------------------------------------------------------------------
@@ -195,19 +204,22 @@ export function aggregateByKcInduk(rows) {
   })
   return Object.entries(groups).map(([kcInduk, groupRows]) => ({
     kcInduk,
-    skorRataRata: Math.round(groupRows.reduce((sum, r) => sum + rowComplianceScore(r), 0) / groupRows.length),
+    skorRataRata: Math.round(
+      groupRows.reduce((sum, r) => sum + rowComplianceScore(r), 0) / groupRows.length,
+    ),
     totalUnit: groupRows.length,
   }))
 }
 
 // --------------------------------------------------------------------------
-// Tren berkala (Line Chart) — dikelompokkan per minggu berdasarkan submisi mentah
+// Tren berkala (Line Chart) — dikelompokkan per minggu, berbasis Live
+// Response mentah (field timestamp submission), bukan rows agregat.
 // --------------------------------------------------------------------------
-export function aggregateTrend(rawRows) {
+export function aggregateTrend(liveRows) {
   const buckets = {}
-  rawRows.forEach((row) => {
-    const d = parseIndoDate(row.tanggalPelaksanaan) || new Date(row.timestamp)
-    if (!d || Number.isNaN(d.getTime())) return
+  liveRows.forEach((row) => {
+    const d = row.timestampDate
+    if (!d) return
     const weekStart = new Date(d)
     weekStart.setDate(d.getDate() - d.getDay())
     const key = weekStart.toISOString().slice(0, 10)
@@ -218,12 +230,12 @@ export function aggregateTrend(rawRows) {
     .sort((a, b) => new Date(a[0]) - new Date(b[0]))
     .map(([week, count]) => ({
       minggu: new Date(week).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
-      jumlahSubmisi: count,
+      jumlahVideo: count,
     }))
 }
 
 // --------------------------------------------------------------------------
-// Distribusi pemenuhan peran (Pie/Donut Chart) — rows = baris matriks
+// Distribusi pemenuhan peran (Pie/Donut Chart) — hanya hitung yang applicable
 // --------------------------------------------------------------------------
 export function aggregateRoleDistribution(rows) {
   const labels = {
@@ -237,7 +249,7 @@ export function aggregateRoleDistribution(rows) {
   }
   return PARAMETER_KEYS.map((key) => ({
     name: labels[key],
-    value: rows.filter((r) => r[key] !== null && Number(r[key]) >= 1).length,
+    value: rows.reduce((sum, r) => sum + (Number(r[key]) > 0 ? Number(r[key]) : 0), 0),
   }))
 }
 
@@ -282,11 +294,49 @@ export function formatPeriodLabel(dateFrom, dateTo) {
 }
 
 // --------------------------------------------------------------------------
-// Unit dengan performa terendah (butuh peningkatan) -- rows = baris matriks
+// Nama file laporan mengikuti PERIODE DATA (tanggal yang dipilih / tanggal
+// pelaksanaan roleplay), BUKAN tanggal saat file diunduh.
+//  - Jika user memilih rentang tanggal di filter -> pakai tanggal itu.
+//  - Jika tidak -> pakai tanggal pelaksanaan (field "Tanggal Pelaksanaan")
+//    yang paling sering muncul di data yang sedang ditampilkan.
+//  - Jika keduanya tidak tersedia -> "Semua_Periode".
+// --------------------------------------------------------------------------
+export function resolveReportFilenameDate({ dateFrom, dateTo }, scopedLiveRows = []) {
+  if (dateFrom && dateTo && dateFrom !== dateTo) {
+    return `${slugifyIndoDate(new Date(dateFrom))}_sd_${slugifyIndoDate(new Date(dateTo))}`
+  }
+  if (dateFrom || dateTo) {
+    return slugifyIndoDate(new Date(dateFrom || dateTo))
+  }
+
+  const counts = new Map()
+  scopedLiveRows.forEach((row) => {
+    const d = row.tanggalPelaksanaanDate || row.timestampDate
+    if (!d) return
+    const key = d.toDateString()
+    counts.set(key, (counts.get(key) || 0) + 1)
+  })
+  if (counts.size === 0) return 'Semua_Periode'
+  const [modeKey] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
+  return slugifyIndoDate(new Date(modeKey))
+}
+
+// --------------------------------------------------------------------------
+// Unit dengan performa terendah (butuh peningkatan) — hanya UKO yang sudah
+// punya minimal 1 data (exclude yang murni N/A / belum pernah submit).
 // --------------------------------------------------------------------------
 export function lowestPerformingUnits(rows, limit = 5) {
   return [...rows]
+    .filter((r) => PARAMETER_KEYS.some((k) => r[k] !== null))
     .map((r) => ({ ...r, score: rowComplianceScore(r) }))
     .sort((a, b) => a.score - b.score)
+    .slice(0, limit)
+}
+
+export function bestPerformingUnits(rows, limit = 5) {
+  return [...rows]
+    .filter((r) => PARAMETER_KEYS.some((k) => r[k] !== null))
+    .map((r) => ({ ...r, score: rowComplianceScore(r) }))
+    .sort((a, b) => b.score - a.score)
     .slice(0, limit)
 }

@@ -1,14 +1,6 @@
 import { Search, Calendar, ChevronDown } from 'lucide-react'
 
-export default function FilterBar({
-  filters,
-  onChange,
-  kcOptions,
-  jenisUkoOptions,
-  kodeUkoOptions,
-  showSearch = true,
-  showJenisUko = true,
-}) {
+export default function FilterBar({ filters, onChange, jenisUkoOptions, kcOptions, ukoOptions, branchOptions, showSearch = true }) {
   const set = (key, value) => onChange({ ...filters, [key]: value })
 
   return (
@@ -18,7 +10,7 @@ export default function FilterBar({
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
           <input
             type="text"
-            placeholder="Cari KC Induk, UKO, Kode UKO, atau nama FL..."
+            placeholder="Cari KC Induk, UKO, Branch Code, Jabatan, atau Nama FL..."
             value={filters.search || ''}
             onChange={(e) => set('search', e.target.value)}
             className="w-full rounded-lg border border-border bg-surface-raised py-2 pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint focus:border-brand/50 focus:outline-none"
@@ -26,15 +18,7 @@ export default function FilterBar({
         </div>
       )}
 
-      {kcOptions && (
-        <Select
-          label="KC Induk"
-          value={filters.kcInduk || 'Semua'}
-          options={['Semua', ...kcOptions]}
-          onChange={(v) => set('kcInduk', v)}
-        />
-      )}
-      {showJenisUko && jenisUkoOptions && (
+      {jenisUkoOptions && (
         <Select
           label="Jenis UKO"
           value={filters.jenisUko || 'Semua'}
@@ -42,12 +26,24 @@ export default function FilterBar({
           onChange={(v) => set('jenisUko', v)}
         />
       )}
-      {kodeUkoOptions && (
+      <Select
+        label="KC Induk"
+        value={filters.kcInduk || 'Semua'}
+        options={['Semua', ...kcOptions]}
+        onChange={(v) => set('kcInduk', v)}
+      />
+      <Select
+        label="Nama UKO"
+        value={filters.namaUko || 'Semua'}
+        options={['Semua', ...ukoOptions]}
+        onChange={(v) => set('namaUko', v)}
+      />
+      {branchOptions && (
         <Select
-          label="Kode UKO"
-          value={filters.kodeUko || 'Semua'}
-          options={['Semua', ...kodeUkoOptions]}
-          onChange={(v) => set('kodeUko', v)}
+          label="Branch Code"
+          value={filters.branchCode || 'Semua'}
+          options={['Semua', ...branchOptions]}
+          onChange={(v) => set('branchCode', v)}
         />
       )}
 

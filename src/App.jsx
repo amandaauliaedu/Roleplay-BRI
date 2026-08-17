@@ -7,24 +7,23 @@ import LiveResponse from './sections/LiveResponse'
 import DownloadReport from './sections/DownloadReport'
 import DataAnalyst from './sections/DataAnalyst'
 import { useSheetData } from './hooks/useSheetData'
-import { buildReportMatrix } from './utils/dataProcessor'
+import { buildReportRows } from './utils/dataProcessor'
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('home')
-  const { rows: rawRows, status, lastSync, error, refresh } = useSheetData()
+  const { rows: liveRows, status, lastSync, error, refresh } = useSheetData()
 
-  // Matriks agregat (satu baris per unit master data) dipakai oleh Home & Data Analyst
-  const matrixRows = useMemo(() => buildReportMatrix(rawRows), [rawRows])
+  const reportRows = useMemo(() => buildReportRows(liveRows), [liveRows])
 
-  const isLoading = status === 'idle' || (status === 'loading' && rawRows.length === 0)
+  const isLoading = status === 'idle' || (status === 'loading' && liveRows.length === 0)
 
   return (
     <div className="min-h-screen bg-void">
-      <Navbar active={activeSection} onNavigate={setActiveSection} />
+      <Navbar active={activeSection} onNavigate={setActiveSection} status={status} />
 
       <main>
         {isLoading ? (
-          <LoadingSpinner label="Menyinkronkan data roleplay..." />
+          <LoadingSpinner label="Menyinkronkan data roleplay dari Google Sheet..." />
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
@@ -34,12 +33,20 @@ export default function App() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.35 }}
             >
-              {activeSection === 'home' && <Home matrixRows={matrixRows} onNavigate={setActiveSection} />}
-              {activeSection === 'live' && (
-                <LiveResponse rows={rawRows} status={status} lastSync={lastSync} error={error} onRefresh={refresh} />
+              {activeSection === 'home' && (
+                <Home reportRows={reportRows} liveRows={liveRows} onNavigate={setActiveSection} />
               )}
-              {activeSection === 'report' && <DownloadReport rows={rawRows} />}
-              {activeSection === 'analyst' && <DataAnalyst matrixRows={matrixRows} rawRows={rawRows} />}
+              {activeSection === 'live' && (
+                <LiveResponse
+                  rows={liveRows}
+                  status={status}
+                  lastSync={lastSync}
+                  error={error}
+                  onRefresh={refresh}
+                />
+              )}
+              {activeSection === 'report' && <DownloadReport liveRows={liveRows} />}
+              {activeSection === 'analyst' && <DataAnalyst reportRows={reportRows} liveRows={liveRows} />}
             </motion.div>
           </AnimatePresence>
         )}
@@ -47,7 +54,7 @@ export default function App() {
 
       <footer className="border-t border-border py-6 text-center">
         <p className="font-mono text-[11px] text-ink-faint">
-          BRI Region 12 Surabaya · Operation, Service, and E-Channel (OSE) · Dibangun dengan React,
+          Roleplay RO Surabaya · Operation, Service, and E-Channel (OSE) · Dibangun dengan React,
           Tailwind CSS &amp; Framer Motion
         </p>
       </footer>

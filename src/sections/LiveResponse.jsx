@@ -1,19 +1,23 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Table2 } from 'lucide-react'
+import { Table2, AlertTriangle, Info } from 'lucide-react'
 import FilterBar from '../components/FilterBar'
 import DataTable from '../components/DataTable'
 import { SyncStatus } from '../components/LoadingState'
-import { filterRawRows } from '../utils/dataProcessor'
-import { KC_INDUK_LIST } from '../data/masterData'
+import { filterRows } from '../utils/dataProcessor'
 
-export default function LiveResponse({ rows, status, lastSync, onRefresh, error }) {
+export default function LiveResponse({ rows, status, lastSync, error, onRefresh }) {
   const [filters, setFilters] = useState({})
 
-  const jenisUkoOptions = useMemo(() => [...new Set(rows.map((r) => r.jenisUko))].sort(), [rows])
-  const kodeUkoOptions = useMemo(() => [...new Set(rows.map((r) => r.kodeUko))].sort(), [rows])
+  const kcOptions = useMemo(() => [...new Set(rows.map((r) => r.kcInduk))].sort(), [rows])
+  const jenisUkoOptions = useMemo(() => [...new Set(rows.map((r) => r.jenisUko))].filter(Boolean).sort(), [rows])
+  const kcScoped = useMemo(
+    () => (filters.kcInduk && filters.kcInduk !== 'Semua' ? rows.filter((r) => r.kcInduk === filters.kcInduk) : rows),
+    [rows, filters.kcInduk],
+  )
+  const ukoOptions = useMemo(() => [...new Set(kcScoped.map((r) => r.namaUko))].sort(), [kcScoped])
 
-  const filtered = useMemo(() => filterRawRows(rows, filters), [rows, filters])
+  const filtered = useMemo(() => filterRows(rows, filters), [rows, filters])
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-12">
@@ -30,21 +34,45 @@ export default function LiveResponse({ rows, status, lastSync, onRefresh, error 
           </p>
           <h1 className="mt-1 font-display text-3xl font-semibold text-ink">Live Response Monitoring</h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-muted">
-            Data respons mentah tersinkron otomatis dari Google Form roleplay (via Google Sheets),
-            diperbarui setiap {60} detik.
+            Data respons mentah tersambung otomatis (auto-sync) ke Google Form roleplay RO
+            Surabaya, diperbarui setiap 30 detik &middot; diurutkan dari submission{' '}
+            <strong className="text-ink">terbaru</strong>. Kolom mengikuti persis header pada
+            spreadsheet Live Response.
           </p>
         </div>
         <SyncStatus status={status} lastSync={lastSync} onRefresh={onRefresh} />
       </motion.div>
 
-      {status === 'mock' && error && (
+      {status === 'mock' && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mb-4 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-xs text-warn"
+          className="mb-4 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/10 p-3 text-xs text-warn"
         >
-          Tidak bisa menyambung ke Google Sheets live ({error}). Menampilkan data simulasi
-          sementara -- cek kembali koneksi internet atau izin akses sheet.
+          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+          <span>
+            Belum berhasil menyambung ke Google Sheet live ({error || 'alasan tidak diketahui'}). Menampilkan
+            data demo sementara. Pastikan sheet dibagikan sebagai <strong>&ldquo;Anyone with the link — Viewer&rdquo;</strong>{' '}
+            agar auto-connect berjalan.
+          </span>
+        </motion.div>
+      )}
+
+      {status === 'live' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mb-4 flex items-start gap-2 rounded-xl border border-brand/20 bg-brand/5 p-3 text-xs text-ink-muted"
+        >
+          <Info size={14} className="mt-0.5 flex-shrink-0 text-brand" />
+          <span>
+            <strong className="text-ink">{rows.length.toLocaleString('id-ID')} baris</strong> berhasil disinkron dari
+            Google Sheet. Jika angka ini terasa jauh lebih sedikit dari jumlah respons yang Anda lihat
+            langsung di Google Form/Sheet, kemungkinan besar ada <strong className="text-ink">Filter (Data → Create a filter)</strong> yang
+            sedang aktif di tab &ldquo;Form_Responses&rdquo; — filter biasa (bukan Filter View) ikut
+            membatasi apa yang diekspor lewat CSV. Buka sheet-nya, lalu <strong className="text-ink">Data → Remove filter</strong>{' '}
+            (atau ganti ke Filter View) supaya auto-sync di sini mengambil seluruh baris.
+          </span>
         </motion.div>
       )}
 
@@ -57,9 +85,9 @@ export default function LiveResponse({ rows, status, lastSync, onRefresh, error 
         <FilterBar
           filters={filters}
           onChange={setFilters}
-          kcOptions={KC_INDUK_LIST}
           jenisUkoOptions={jenisUkoOptions}
-          kodeUkoOptions={kodeUkoOptions}
+          kcOptions={kcOptions}
+          ukoOptions={ukoOptions}
         />
       </motion.div>
 

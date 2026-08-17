@@ -1,5 +1,7 @@
-// Generator data dummy (submisi mentah, meniru struktur asli Google Form)
-// dipakai sebagai fallback ketika live sheet tidak bisa diakses.
+// Fallback demo data — HANYA dipakai jika koneksi ke Google Sheets Live
+// Response gagal (mis. sheet belum di-share "Anyone with the link", atau
+// browser sedang offline). Strukturnya PERSIS meniru kolom asli Google Form
+// supaya seluruh dashboard tetap bisa didemokan tanpa koneksi live.
 import { MASTER_DATA } from '../data/masterData'
 
 function mulberry32(seed) {
@@ -13,98 +15,42 @@ function mulberry32(seed) {
 }
 const rand = mulberry32(20260807)
 
-const JABATAN_LABELS = ['CS', 'Satpam jabatan CS', 'Satpam jabatan Teller', 'Satpam Only', 'Teller', 'Universal Banker']
-const FIRST_NAMES = ['Ahmad', 'Siti', 'Budi', 'Rizky', 'Dewi', 'Hilda', 'Umar', 'Farah', 'Laksamana', 'Eva', 'Kurniawan', 'Ridho', 'Nabila', 'Discus', 'Akbar', 'Astrid']
-const LAST_NAMES = ['Pratama', 'Wijaya', 'Santoso', 'Fadillah', 'Anggraini', 'Zulfani', 'Faruq', 'Lilyana', 'Ananda', 'Damayanti', 'Rendra', 'Octavia']
+const JABATAN_POOL = ['Universal banker', 'Satpam jabatan CS', 'Satpam jabatan Teller', 'Satpam Only', 'Teller']
+const NAMES = ['Silfia Zulfani', 'Ananda Amaliya', 'Astrid Octavia', 'Ragilia Larasati', 'Hilda R', 'Rizky Nur Fadillah', 'Kurniawan Noor Ananda', 'Eva Lilyana', 'Hestin N', 'Farilia Hilya Agatha']
 
-const MONTHS_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-const DAYS_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
-
-function pick(arr) {
-  return arr[Math.floor(rand() * arr.length)]
-}
-
-function randomRecentDate(withinDays = 21) {
+function randomRecentDate() {
   const now = new Date()
-  const d = new Date(now.getTime() - rand() * withinDays * 24 * 60 * 60 * 1000)
-  return d
-}
-
-function formatIndoDate(d) {
-  return `${DAYS_ID[d.getDay()]}, ${d.getDate()} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`
-}
-
-function randomName() {
-  return `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`
-}
-
-function randomPn() {
-  return String(Math.floor(300000 + rand() * 99999))
-}
-
-let idCounter = 0
-
-function pushSubmission(rows, unit, jabatan, date) {
-  idCounter += 1
-  rows.push({
-    id: `MOCK-${idCounter}`,
-    timestamp: date.toISOString(),
-    jenisUko: unit.jenisUko,
-    tanggalPelaksanaan: formatIndoDate(date),
-    kodeUko: unit.kodeUko,
-    namaUko: unit.namaUker,
-    kcInduk: unit.namaCabang,
-    jabatan,
-    pilihanVideo: 'Video Roleplay',
-    pnFl: randomPn(),
-    namaFl: randomName(),
-    uploadVideo: 'https://drive.google.com/mock-link',
-    keteranganPremises: '-',
-  })
-}
-
-function pushVideoPremises(rows, unit, date) {
-  idCounter += 1
-  rows.push({
-    id: `MOCK-${idCounter}`,
-    timestamp: date.toISOString(),
-    jenisUko: unit.jenisUko,
-    tanggalPelaksanaan: formatIndoDate(date),
-    kodeUko: unit.kodeUko,
-    namaUko: unit.namaUker,
-    kcInduk: unit.namaCabang,
-    jabatan: '-',
-    pilihanVideo: 'Video Premises',
-    pnFl: '',
-    namaFl: '',
-    uploadVideo: 'https://drive.google.com/mock-link-premises',
-    keteranganPremises: pick(['baik', 'ok', 'sesuai', 'fix', '-']),
-  })
+  const past = new Date(now.getTime() - rand() * 20 * 24 * 60 * 60 * 1000)
+  return past.toISOString()
 }
 
 export function generateMockResponses() {
   const rows = []
+  let idx = 0
+  MASTER_DATA.forEach((uko) => {
+    // sebagian besar UKO sudah submit, sebagian kecil belum (agar Video
+    // Premises & beberapa parameter tampil N/A seperti dokumen asli)
+    if (rand() < 0.08) return
 
-  MASTER_DATA.forEach((unit) => {
-    JABATAN_LABELS.forEach((jabatan) => {
-      // KC selalu lengkap; jenis lain punya peluang gagal/kosong supaya
-      // matriks hasil agregasi bervariasi (hijau/merah) seperti data asli
-      const skipChance = unit.jenisUko === 'KC' ? 0.02 : 0.08
-      const retakeChance = 0.12
-      const r = rand()
-      if (r < skipChance) return // tidak submit -> 0
-      const date = randomRecentDate()
-      pushSubmission(rows, unit, jabatan, date)
-      if (rand() < retakeChance) {
-        pushSubmission(rows, unit, jabatan, randomRecentDate())
-      }
-    })
-
-    // Video Premises: sebagian besar unit submit, sebagian tidak (-> N/A)
-    if (rand() > 0.25) {
-      pushVideoPremises(rows, unit, randomRecentDate())
+    const submissionCount = 4 + Math.floor(rand() * 3)
+    for (let i = 0; i < submissionCount; i += 1) {
+      idx += 1
+      const isPremises = rand() < 0.12
+      rows.push({
+        Timestamp: randomRecentDate(),
+        'Jenis UKO': uko.jenisUko,
+        'Tanggal Pelaksanaan': 'Rabu, 24 Juni 2026',
+        'Kode UKO': uko.kodeUko,
+        'Nama UKO': uko.namaUker,
+        Jabatan: isPremises ? 'Universal banker' : JABATAN_POOL[Math.floor(rand() * JABATAN_POOL.length)],
+        'Pilihan Video': isPremises ? 'Video Premises' : 'Video Roleplay',
+        'PN FL Yang Roleplay': String(300000 + Math.floor(rand() * 90000)),
+        'Nama FL Yang Roleplay': NAMES[Math.floor(rand() * NAMES.length)],
+        'Upload Video': 'https://drive.google.com/mock-link',
+        'Keterangan Premises': isPremises ? 'baik' : '-',
+        __mockId: `MOCK-${idx}`,
+      })
     }
   })
-
-  return rows.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  return rows
 }

@@ -8,69 +8,66 @@ import {
 } from '@tanstack/react-table'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowUpDown, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
+import { LIVE_RESPONSE_COLUMNS } from '../data/config'
 
-// Tabel Live Response -- menampilkan submisi MENTAH persis struktur kolom
-// Google Form: Timestamp, Jenis UKO, Tanggal Pelaksanaan, Kode UKO, Nama UKO,
-// Jabatan, Pilihan Video, PN FL, Nama FL, Upload Video, Keterangan Premises.
+function formatCell(key, value, row) {
+  if (key === 'timestamp') {
+    const d = row.timestampDate
+    if (d) {
+      return (
+        <span className="font-mono text-xs text-ink-muted">
+          {d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      )
+    }
+    return <span className="text-ink-faint">{value || '-'}</span>
+  }
+  if (!value) return <span className="text-ink-faint">-</span>
+  if (key === 'uploadVideo') {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+      >
+        Lihat video <ExternalLink size={11} />
+      </a>
+    )
+  }
+  if (key === 'kodeUko') return <span className="font-mono text-xs text-brand">{value}</span>
+  return <span>{value}</span>
+}
+
+// Tabel Live Response — kolom PERSIS sama seperti header Google Sheet
+// (Timestamp, Jenis UKO, Tanggal Pelaksanaan, Kode UKO, Nama UKO, Jabatan,
+// Pilihan Video, PN FL Yang Roleplay, Nama FL Yang Roleplay, Upload Video,
+// Keterangan Premises), plus KC Induk hasil pencocokan master data.
 export default function DataTable({ rows, pageSize = 10 }) {
-  const [sorting, setSorting] = useState([])
+  // Default sort: Timestamp terbaru dulu (data sudah diurutkan begitu dari
+  // dataProcessor, tapi kita set eksplisit di sini juga supaya tetap
+  // konsisten walau kolom lain diklik lalu kembali ke Timestamp).
+  const [sorting, setSorting] = useState([{ id: 'timestamp', desc: true }])
 
   const columns = useMemo(
     () => [
+      ...LIVE_RESPONSE_COLUMNS.map((col) => ({
+        accessorKey: col.key,
+        header: col.label,
+        // Sorting Timestamp memakai Date hasil parse eksplisit (timestampDate),
+        // bukan string mentah — supaya format DD/MM/YYYY khas Google Form
+        // Indonesia tidak terurut asal-asalan secara leksikografis.
+        sortingFn:
+          col.key === 'timestamp'
+            ? (a, b) => (a.original.timestampDate?.getTime() || 0) - (b.original.timestampDate?.getTime() || 0)
+            : undefined,
+        cell: (info) => formatCell(col.key, info.getValue(), info.row.original),
+      })),
       {
-        accessorKey: 'timestamp',
-        header: 'Timestamp',
-        cell: (info) => {
-          const v = info.getValue()
-          const d = new Date(v)
-          return (
-            <span className="whitespace-nowrap font-mono text-xs text-ink-muted">
-              {Number.isNaN(d.getTime())
-                ? v
-                : d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )
-        },
+        accessorKey: 'kcInduk',
+        header: 'KC Induk',
+        cell: (info) => <span className="rounded-md bg-surface-hover px-2 py-1 text-xs text-ink-muted">{info.getValue()}</span>,
       },
-      {
-        accessorKey: 'jenisUko',
-        header: 'Jenis UKO',
-        cell: (info) => (
-          <span className="rounded-md bg-surface-hover px-2 py-1 font-mono text-[11px] text-ink-muted">
-            {info.getValue()}
-          </span>
-        ),
-      },
-      { accessorKey: 'tanggalPelaksanaan', header: 'Tanggal Pelaksanaan', cell: (info) => (
-          <span className="whitespace-nowrap text-xs">{info.getValue()}</span>
-        ) },
-      { accessorKey: 'kodeUko', header: 'Kode UKO', cell: (info) => (
-          <span className="font-mono text-xs text-brand">{info.getValue()}</span>
-        ) },
-      { accessorKey: 'namaUko', header: 'Nama UKO' },
-      { accessorKey: 'kcInduk', header: 'KC Induk' },
-      { accessorKey: 'jabatan', header: 'Jabatan' },
-      { accessorKey: 'pilihanVideo', header: 'Pilihan Video' },
-      { accessorKey: 'pnFl', header: 'PN FL Yang Roleplay' },
-      { accessorKey: 'namaFl', header: 'Nama FL Yang Roleplay' },
-      {
-        accessorKey: 'uploadVideo',
-        header: 'Upload Video',
-        cell: (info) =>
-          info.getValue() ? (
-            <a
-              href={info.getValue()}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
-            >
-              Video <ExternalLink size={11} />
-            </a>
-          ) : (
-            <span className="text-ink-faint">-</span>
-          ),
-      },
-      { accessorKey: 'keteranganPremises', header: 'Keterangan Premises' },
     ],
     [],
   )
@@ -89,7 +86,7 @@ export default function DataTable({ rows, pageSize = 10 }) {
   return (
     <div className="panel overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1400px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-raised">
               {table.getHeaderGroups()[0].headers.map((header) => (
@@ -113,7 +110,7 @@ export default function DataTable({ rows, pageSize = 10 }) {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, delay: i * 0.02 }}
+                  transition={{ duration: 0.25, delay: i * 0.03 }}
                   className="border-b border-border/60 hover:bg-surface-hover"
                 >
                   {row.getVisibleCells().map((cell) => (

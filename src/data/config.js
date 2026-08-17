@@ -1,39 +1,50 @@
 // ============================================================================
-// KONFIGURASI SUMBER DATA -- AUTO-CONNECT KE GOOGLE SHEETS
+// KONFIGURASI SUMBER DATA — Live Response (Google Form) & Master Data UKO
 // ============================================================================
-// Sheet live response dibagikan sebagai "Anyone with link can view", sehingga
-// bisa diakses langsung dari browser tanpa API key lewat endpoint export CSV
-// bawaan Google (gviz). Ini yang membuat Live Response bisa auto-connect &
-// auto-sync tanpa perlu langkah "Publish to web" manual.
+// Sheet Live Response: https://docs.google.com/spreadsheets/d/1Gt7w2LLRVhGnhEsNOVeewR2rvcs4AhKfbQeNgAn7cUU/edit#gid=1952116967
 //
-// Jika suatu saat sheet diubah menjadi private/restricted, fetch ini akan
-// gagal (CORS/403) dan dashboard otomatis fallback ke mock data -- tidak
-// akan menampilkan layar kosong/error ke pengguna.
+// AUTO-CONNECT: dashboard ini secara default membangun URL export CSV Google
+// Sheets (`/export?format=csv&gid=...`) dari SHEET_ID + GID di bawah — TIDAK
+// perlu langkah manual "Publish to web". Ini bekerja selama sheet dibagikan
+// minimal sebagai "Anyone with the link — Viewer". Endpoint ini dipoll setiap
+// `pollIntervalMs` supaya Live Response tersinkron otomatis tanpa refresh.
+//
+// Jika suatu saat sheet diganti privat / butuh autentikasi, override lewat
+// file `.env`:
+//   VITE_SHEET_CSV_URL=...   (link publish-to-web / export csv custom)
+//   VITE_SHEET_ID=...        VITE_SHEET_GID=...
+//   VITE_GOOGLE_API_KEY=...  (opsional, untuk jalur Sheets API v4)
 // ============================================================================
 
-const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1Gt7w2LLRVhGnhEsNOVeewR2rvcs4AhKfbQeNgAn7cUU'
-const SHEET_GID = import.meta.env.VITE_SHEET_GID || '1952116967'
+const DEFAULT_SHEET_ID = '1Gt7w2LLRVhGnhEsNOVeewR2rvcs4AhKfbQeNgAn7cUU'
+const DEFAULT_GID = '1952116967'
 
-function buildDefaultCsvUrl(id, gid) {
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`
-}
+const sheetId = import.meta.env.VITE_SHEET_ID || DEFAULT_SHEET_ID
+const gid = import.meta.env.VITE_SHEET_GID || DEFAULT_GID
+const explicitCsvUrl = import.meta.env.VITE_SHEET_CSV_URL || ''
+const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || ''
+
+// URL auto-connect: dibangun otomatis dari sheetId + gid (tidak butuh publish manual)
+const autoCsvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`
+// URL cadangan (gviz) — dipakai hook sebagai fallback jika `export` diblokir CORS
+const gvizCsvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`
 
 export const SHEET_CONFIG = {
-  sheetId: SHEET_ID,
-  gid: SHEET_GID,
-  // Bisa dioverride lewat VITE_SHEET_CSV_URL kalau sheet-nya berbeda / private
-  csvUrl: import.meta.env.VITE_SHEET_CSV_URL || buildDefaultCsvUrl(SHEET_ID, SHEET_GID),
-  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '',
-  pollIntervalMs: 60_000, // interval refresh live response
+  sheetId,
+  gid,
+  csvUrl: explicitCsvUrl || autoCsvUrl,
+  fallbackCsvUrl: gvizCsvUrl,
+  apiUrl: `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Form%20Responses%201?key=${apiKey}`,
+  apiKey,
+  useApi: Boolean(apiKey),
+  pollIntervalMs: 30_000, // interval refresh live response (30 detik)
 }
 
-// ============================================================================
-// MAPPING KOLOM MENTAH GOOGLE FORM -> FIELD INTERNAL
-// ============================================================================
-// Sesuai struktur asli sheet "Form_Responses":
-// Timestamp | Jenis UKO | Tanggal Pelaksanaan | Kode UKO | Nama UKO | Jabatan
-// | Pilihan Video | PN FL Yang Roleplay | Nama FL Yang Roleplay | Upload Video
-// | Keterangan Premises
+// Mapping header mentah Google Form -> field internal dashboard.
+// Header di sheet Live Response (lihat tab "Form_Responses"):
+// Timestamp | Jenis UKO | Tanggal Pelaksanaan | Kode UKO | Nama UKO | Jabatan |
+// Pilihan Video | PN FL Yang Roleplay | Nama FL Yang Roleplay | Upload Video |
+// Keterangan Premises
 export const COLUMN_MAP = {
   timestamp: { raw: ['timestamp'], field: 'timestamp' },
   jenisUko: { raw: ['jenis uko'], field: 'jenisUko' },
@@ -48,35 +59,49 @@ export const COLUMN_MAP = {
   keteranganPremises: { raw: ['keterangan premises'], field: 'keteranganPremises' },
 }
 
-// ============================================================================
-// AGREGASI: JABATAN (submisi mentah) -> KOLOM PARAMETER REPORT FINAL ROLEPLAY
-// ============================================================================
-// Setiap baris respons mentah = SATU submisi roleplay untuk SATU parameter.
-// Untuk menghasilkan matriks REPORT FINAL ROLEPLAY, submisi per Kode UKO
-// dihitung (count) per parameter berikut. Sesuaikan daftar `match` di bawah
-// bila label pilihan pada Google Form kamu berbeda teksnya -- pencocokan
-// bersifat case-insensitive & substring, urutan dari paling spesifik.
-export const JABATAN_PARAM_MAP = [
-  { param: 'satpamCS', match: ['satpam jabatan cs', 'satpam sbg cs', 'satpam sebagai cs'] },
-  { param: 'satpamTeller', match: ['satpam jabatan teller', 'satpam sbg teller', 'satpam sebagai teller'] },
-  { param: 'satpamOnly', match: ['satpam only', 'satpam saja'] },
-  { param: 'ub', match: ['universal banker', 'universal bank', ' ub '] },
-  { param: 'teller', match: ['teller'] },
-  { param: 'cs', match: ['customer service', ' cs ', 'cs'] },
+// Kolom yang ditampilkan pada tabel Live Response — urut & label PERSIS sama
+// dengan header Google Sheet supaya operator langsung mengenali datanya.
+export const LIVE_RESPONSE_COLUMNS = [
+  { key: 'timestamp', label: 'Timestamp' },
+  { key: 'jenisUko', label: 'Jenis UKO' },
+  { key: 'tanggalPelaksanaan', label: 'Tanggal Pelaksanaan' },
+  { key: 'kodeUko', label: 'Kode UKO' },
+  { key: 'namaUko', label: 'Nama UKO' },
+  { key: 'jabatan', label: 'Jabatan' },
+  { key: 'pilihanVideo', label: 'Pilihan Video' },
+  { key: 'pnFl', label: 'PN FL Yang Roleplay' },
+  { key: 'namaFl', label: 'Nama FL Yang Roleplay' },
+  { key: 'uploadVideo', label: 'Upload Video' },
+  { key: 'keteranganPremises', label: 'Keterangan Premises' },
 ]
 
-// Nilai "Pilihan Video" yang dianggap sebagai submisi Video Premises
-// (selain "Video Roleplay" yang dihitung ke parameter jabatan di atas)
-export const VIDEO_PREMISES_MATCH = ['video premises', 'premises']
+// --------------------------------------------------------------------------
+// Mapping "Jabatan" (nilai isian Google Form) -> kolom parameter pada matriks
+// REPORT FINAL ROLEPLAY (CS / Satpam jabatan CS / Satpam jabatan Teller /
+// Satpam Only / Teller / UB). Dipakai untuk menghitung jumlah video roleplay
+// per parameter, per UKO.
+//
+// CATATAN: opsi "Jabatan" yang sudah dikonfirmasi ada di form adalah
+// "Universal banker" (untuk skenario UB). Tambahkan / sesuaikan pola di
+// bawah ini persis dengan opsi dropdown "Jabatan" pada Google Form Anda
+// (case-insensitive, dicocokkan dengan `includes`).
+// --------------------------------------------------------------------------
+export const JABATAN_TO_METRIC = [
+  { metric: 'satpamCS', patterns: ['satpam jabatan cs', 'satpam sbg cs', 'satpam - cs'] },
+  { metric: 'satpamTeller', patterns: ['satpam jabatan teller', 'satpam sbg teller', 'satpam - teller'] },
+  { metric: 'satpamOnly', patterns: ['satpam only', 'satpam'] },
+  { metric: 'cs', patterns: ['universal banker', 'cs'] },
+  { metric: 'teller', patterns: ['teller'] },
+  { metric: 'ub', patterns: ['ub', 'unit banking'] },
+]
 
-// Parameter yang HANYA berlaku di level KC (kantor cabang induk unit itu
-// sendiri) -- pada praktiknya UB dievaluasi satu kali per cabang, bukan per
-// UKO turunannya. Sub-unit (KCP/KK/UNIT) akan ditampilkan N/A (hitam) untuk
-// parameter ini walau tidak ada larangan submit dari form. Kosongkan array
-// ini bila kamu ingin semua parameter dihitung apa adanya di semua jenis UKO.
-export const KC_ONLY_PARAMS = ['ub']
-
-export const PARAMETER_KEYS = ['cs', 'satpamCS', 'satpamTeller', 'satpamOnly', 'teller', 'ub', 'videoPremises']
+export function jabatanToMetric(jabatan) {
+  const val = String(jabatan || '').toLowerCase().trim()
+  for (const { metric, patterns } of JABATAN_TO_METRIC) {
+    if (patterns.some((p) => val.includes(p))) return metric
+  }
+  return null
+}
 
 // Kolom parameter roleplay yang berada di bawah banner "ROLEPLAY, [tanggal]"
 export const ROLEPLAY_PARAM_COLUMNS = [
@@ -99,6 +124,8 @@ export const VIDEO_COLUMN = { key: 'videoPremises', label: 'VIDEO PREMISES' }
 
 // Susunan lengkap kolom matriks REPORT FINAL ROLEPLAY (urutan tampil)
 export const REPORT_COLUMNS = [...IDENTITY_COLUMNS, ...ROLEPLAY_PARAM_COLUMNS, VIDEO_COLUMN]
+
+export const PARAMETER_KEYS = ['cs', 'satpamCS', 'satpamTeller', 'satpamOnly', 'teller', 'ub', 'videoPremises']
 
 // Palet warna persis mengikuti dokumen "REPORT FINAL ROLEPLAY"
 export const REPORT_PALETTE = {
