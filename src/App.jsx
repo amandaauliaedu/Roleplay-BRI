@@ -52,11 +52,16 @@ export default function App() {
         )}
       </main>
 
-      <footer className="border-t border-border py-6 text-center">
-        <p className="font-mono text-[11px] text-ink-faint">
-          Roleplay RO Surabaya · Operation, Service, and E-Channel (OSE) · Dibangun dengan React,
-          Tailwind CSS &amp; Framer Motion
-        </p>
+      <footer className="border-t border-border py-6">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-center gap-2 px-6 text-center sm:flex-row">
+          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md bg-brand text-white">
+            <span className="font-display text-[9px] font-extrabold tracking-tight">RO</span>
+          </span>
+          <p className="font-mono text-[11px] text-ink-faint">
+            Roleplay RO Surabaya · Operation, Service, and E-Channel (OSE) · Dibangun dengan React,
+            Tailwind CSS &amp; Framer Motion
+          </p>
+        </div>
       </footer>
     </div>
   )

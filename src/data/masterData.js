@@ -37,6 +37,17 @@ export function findUkoByKode(kodeUko) {
   return UKO_INDEX.get(normalizeCode(kodeUko)) || null
 }
 
+// Kode UKO asli di file .xls berupa teks berpadding-nol (mis. "0006"), tapi
+// saat dibaca lewat pandas/Excel angka murni kehilangan nol di depan
+// ("6"). Fungsi ini mengembalikan bentuk tampil 4-digit yang benar — dipakai
+// untuk kolom "Branch Code" pada Report Final Roleplay (kolom itu sebenarnya
+// menampilkan Kode UKO tiap baris, bukan kode cabang induk bersama).
+export function padUkoCode(code) {
+  const norm = normalizeCode(code)
+  if (!norm) return ''
+  return norm.length < 4 ? norm.padStart(4, '0') : norm
+}
+
 // Daftar KC Induk unik, URUTAN SESUAI MASTER DATA (= urutan dokumen
 // "REPORT FINAL ROLEPLAY" asli) — dipakai untuk mengurutkan Download Report.
 export const KC_INDUK_ORDER = [...new Set(MASTER_DATA.map((r) => r.namaCabang))]

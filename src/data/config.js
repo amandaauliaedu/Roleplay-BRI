@@ -77,26 +77,45 @@ export const LIVE_RESPONSE_COLUMNS = [
 
 // --------------------------------------------------------------------------
 // Mapping "Jabatan" (nilai isian Google Form) -> kolom parameter pada matriks
-// REPORT FINAL ROLEPLAY (CS / Satpam jabatan CS / Satpam jabatan Teller /
-// Satpam Only / Teller / UB). Dipakai untuk menghitung jumlah video roleplay
-// per parameter, per UKO.
-//
-// CATATAN: opsi "Jabatan" yang sudah dikonfirmasi ada di form adalah
-// "Universal banker" (untuk skenario UB). Tambahkan / sesuaikan pola di
-// bawah ini persis dengan opsi dropdown "Jabatan" pada Google Form Anda
-// (case-insensitive, dicocokkan dengan `includes`).
+// REPORT FINAL ROLEPLAY. Dikonfirmasi LANGSUNG dari rumus COUNTIFS resmi
+// yang dipakai sebelumnya (kolom D2:I2 pada sheet rekap):
+//   D2 = "Customer Service"        -> CS
+//   E2 = "Satpam Jabatan CS"       -> Satpam jabatan CS
+//   F2 = "Satpam Jabatan Teller"   -> Satpam jabatan Teller
+//   G2 = "Satpam Only"             -> Satpam Only
+//   H2 = "Teller"                  -> Teller
+//   I2 = "Universal Banker"        -> UB
+// Dicocokkan EXACT (case-insensitive, whitespace di-trim) dulu; kalau tidak
+// ketemu exact match, baru dicoba fuzzy `includes` sebagai jaring pengaman
+// untuk variasi kecil (typo/spasi ganda) tanpa salah kaprah menyamakan
+// "Customer Service" dengan "Universal Banker" seperti versi sebelumnya.
 // --------------------------------------------------------------------------
 export const JABATAN_TO_METRIC = [
-  { metric: 'satpamCS', patterns: ['satpam jabatan cs', 'satpam sbg cs', 'satpam - cs'] },
-  { metric: 'satpamTeller', patterns: ['satpam jabatan teller', 'satpam sbg teller', 'satpam - teller'] },
-  { metric: 'satpamOnly', patterns: ['satpam only', 'satpam'] },
-  { metric: 'cs', patterns: ['universal banker', 'cs'] },
-  { metric: 'teller', patterns: ['teller'] },
-  { metric: 'ub', patterns: ['ub', 'unit banking'] },
+  { metric: 'cs', exact: 'customer service', patterns: ['customer service'] },
+  { metric: 'satpamCS', exact: 'satpam jabatan cs', patterns: ['satpam jabatan cs', 'satpam sbg cs', 'satpam - cs'] },
+  { metric: 'satpamTeller', exact: 'satpam jabatan teller', patterns: ['satpam jabatan teller', 'satpam sbg teller', 'satpam - teller'] },
+  { metric: 'satpamOnly', exact: 'satpam only', patterns: ['satpam only'] },
+  { metric: 'teller', exact: 'teller', patterns: ['teller'] },
+  { metric: 'ub', exact: 'universal banker', patterns: ['universal banker'] },
 ]
+
+// Video Premises BUKAN ditentukan dari field "Pilihan Video", melainkan dari
+// Jabatan = "Middle Manajer" — role khusus yang bertugas upload video
+// Premises (dikonfirmasi langsung oleh pengguna).
+export const PREMISES_JABATAN_PATTERNS = ['middle manajer', 'middle manager']
+
+export function isPremisesJabatan(jabatan) {
+  const val = String(jabatan || '').toLowerCase().trim()
+  return PREMISES_JABATAN_PATTERNS.some((p) => val.includes(p))
+}
 
 export function jabatanToMetric(jabatan) {
   const val = String(jabatan || '').toLowerCase().trim()
+  if (!val) return null
+  // 1) Exact match dulu (paling akurat & menghindari tabrakan antar pola)
+  const exactHit = JABATAN_TO_METRIC.find((m) => m.exact === val)
+  if (exactHit) return exactHit.metric
+  // 2) Fuzzy fallback
   for (const { metric, patterns } of JABATAN_TO_METRIC) {
     if (patterns.some((p) => val.includes(p))) return metric
   }

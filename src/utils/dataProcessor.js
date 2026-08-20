@@ -1,5 +1,5 @@
-import { PARAMETER_KEYS, COLUMN_MAP, jabatanToMetric } from '../data/config'
-import { MASTER_DATA, KC_INDUK_ORDER, UKO_ORDER_BY_KC, findUkoByKode, normalizeCode } from '../data/masterData'
+import { PARAMETER_KEYS, COLUMN_MAP, jabatanToMetric, isPremisesJabatan } from '../data/config'
+import { MASTER_DATA, KC_INDUK_ORDER, UKO_ORDER_BY_KC, findUkoByKode, normalizeCode, padUkoCode } from '../data/masterData'
 import { parseIndoDate, slugifyIndoDate } from './dateUtils'
 
 // ============================================================================
@@ -81,7 +81,11 @@ export function buildReportRows(liveRows) {
     const submissions = byUko.get(uko.kodeUkoNorm) || []
     rows.push({
       id: `RPT-${uko.kodeUkoNorm}`,
-      branchCode: uko.kodeBranch,
+      // "Branch Code" pada template REPORT FINAL ROLEPLAY sebenarnya adalah
+      // Kode UKO milik baris itu sendiri (bukan kode cabang induk bersama),
+      // ditampilkan 4-digit dengan nol di depan persis seperti dokumen asli
+      // (mis. "0006", bukan "6").
+      branchCode: padUkoCode(uko.kodeUko),
       namaUko: uko.namaUker,
       kcInduk: uko.namaCabang,
       jenisUko: uko.jenisUko,
@@ -97,8 +101,9 @@ function buildParamSet(submissions) {
   const counts = { cs: 0, satpamCS: 0, satpamTeller: 0, satpamOnly: 0, teller: 0, ub: 0, videoPremises: 0 }
 
   submissions.forEach((s) => {
-    const isPremises = String(s.pilihanVideo || '').toLowerCase().includes('premises')
-    if (isPremises) {
+    // Video Premises ditentukan dari Jabatan = "Middle Manajer" (role khusus
+    // yang bertugas upload video Premises), BUKAN dari field "Pilihan Video".
+    if (isPremisesJabatan(s.jabatan)) {
       counts.videoPremises += 1
       return
     }
@@ -110,6 +115,27 @@ function buildParamSet(submissions) {
     return { cs: null, satpamCS: null, satpamTeller: null, satpamOnly: null, teller: null, ub: null, videoPremises: null }
   }
   return counts
+}
+
+// --------------------------------------------------------------------------
+// DIAGNOSTIK: nilai "Jabatan" dari submission live yang TIDAK cocok dengan
+// pola manapun di JABATAN_TO_METRIC / PREMISES_JABATAN_PATTERNS (config.js)
+// — akibatnya submission tsb tidak menambah hitungan parameter apapun
+// (tampak sebagai angka 0 di laporan padahal sebenarnya ADA data). Dipakai
+// untuk banner diagnostik di Download Report.
+// --------------------------------------------------------------------------
+export function distinctUnmatchedJabatan(liveRows) {
+  const counts = new Map()
+  liveRows.forEach((row) => {
+    const raw = String(row.jabatan || '').trim()
+    if (!raw) return
+    if (isPremisesJabatan(raw)) return
+    if (jabatanToMetric(raw)) return
+    counts.set(raw, (counts.get(raw) || 0) + 1)
+  })
+  return [...counts.entries()]
+    .map(([jabatan, count]) => ({ jabatan, count }))
+    .sort((a, b) => b.count - a.count)
 }
 
 // Urutkan rows agregat sesuai urutan resmi KC Induk & UKO pada master data

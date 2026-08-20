@@ -1,6 +1,6 @@
 import { Search, Calendar, ChevronDown } from 'lucide-react'
 
-export default function FilterBar({ filters, onChange, jenisUkoOptions, kcOptions, ukoOptions, branchOptions, showSearch = true }) {
+export default function FilterBar({ filters, onChange, jenisUkoOptions, kcOptions, ukoOptions, branchOptions, showSearch = true, dateFieldLabel = 'Tanggal submit' }) {
   const set = (key, value) => onChange({ ...filters, [key]: value })
 
   return (
@@ -47,23 +47,26 @@ export default function FilterBar({ filters, onChange, jenisUkoOptions, kcOption
         />
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="relative">
-          <Calendar size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+      <div className="flex flex-col gap-1">
+        <span className="pl-1 font-mono text-[10px] uppercase tracking-wider text-ink-faint">{dateFieldLabel}</span>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Calendar size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+            <input
+              type="date"
+              value={filters.dateFrom || ''}
+              onChange={(e) => set('dateFrom', e.target.value)}
+              className="rounded-lg border border-border bg-surface-raised py-2 pl-8 pr-2 text-xs text-ink focus:border-brand/50 focus:outline-none"
+            />
+          </div>
+          <span className="text-xs text-ink-faint">s/d</span>
           <input
             type="date"
-            value={filters.dateFrom || ''}
-            onChange={(e) => set('dateFrom', e.target.value)}
-            className="rounded-lg border border-border bg-surface-raised py-2 pl-8 pr-2 text-xs text-ink focus:border-brand/50 focus:outline-none"
+            value={filters.dateTo || ''}
+            onChange={(e) => set('dateTo', e.target.value)}
+            className="rounded-lg border border-border bg-surface-raised py-2 px-2 text-xs text-ink focus:border-brand/50 focus:outline-none"
           />
         </div>
-        <span className="text-xs text-ink-faint">s/d</span>
-        <input
-          type="date"
-          value={filters.dateTo || ''}
-          onChange={(e) => set('dateTo', e.target.value)}
-          className="rounded-lg border border-border bg-surface-raised py-2 px-2 text-xs text-ink focus:border-brand/50 focus:outline-none"
-        />
       </div>
     </div>
   )

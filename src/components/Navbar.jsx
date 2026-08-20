@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Radar, Home, Table2, FileDown, BarChart3, Menu, X, Sun, Moon, Wifi, WifiOff } from 'lucide-react'
+import { Home, Table2, FileDown, BarChart3, Menu, X, Sun, Moon, Wifi, WifiOff } from 'lucide-react'
 import { useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
 
@@ -23,8 +23,8 @@ export default function Navbar({ active, onNavigate, status }) {
     <header className="sticky top-0 z-50 border-b border-border bg-void/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-2.5">
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
-            <Radar size={20} strokeWidth={2} />
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white">
+            <span className="font-display text-xs font-extrabold tracking-tight">RO</span>
             <span className="absolute inset-0 rounded-lg border border-brand/40 animate-pulseRing" />
           </div>
           <div className="leading-tight">

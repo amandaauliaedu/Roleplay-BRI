@@ -1,13 +1,26 @@
 import { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
-import { Table2, AlertTriangle, Info } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Table2, AlertTriangle, Info, Search, X, CalendarSearch } from 'lucide-react'
 import FilterBar from '../components/FilterBar'
 import DataTable from '../components/DataTable'
 import { SyncStatus } from '../components/LoadingState'
 import { filterRows } from '../utils/dataProcessor'
+import { formatIndoDate } from '../utils/dateUtils'
 
 export default function LiveResponse({ rows, status, lastSync, error, onRefresh }) {
   const [filters, setFilters] = useState({})
+
+  // --- Cari berdasarkan Tanggal Pelaksanaan (dengan tombol search) ---
+  const [dateInput, setDateInput] = useState('')
+  const [appliedDate, setAppliedDate] = useState(null)
+
+  const runDateSearch = () => {
+    if (dateInput) setAppliedDate(dateInput)
+  }
+  const clearDateSearch = () => {
+    setDateInput('')
+    setAppliedDate(null)
+  }
 
   const kcOptions = useMemo(() => [...new Set(rows.map((r) => r.kcInduk))].sort(), [rows])
   const jenisUkoOptions = useMemo(() => [...new Set(rows.map((r) => r.jenisUko))].filter(Boolean).sort(), [rows])
@@ -17,7 +30,17 @@ export default function LiveResponse({ rows, status, lastSync, error, onRefresh 
   )
   const ukoOptions = useMemo(() => [...new Set(kcScoped.map((r) => r.namaUko))].sort(), [kcScoped])
 
-  const filtered = useMemo(() => filterRows(rows, filters), [rows, filters])
+  const filteredBase = useMemo(() => filterRows(rows, filters), [rows, filters])
+
+  // Cocokkan Tanggal Pelaksanaan (bukan Timestamp submit) — sesuai maksud
+  // "tanggal yang diinputkan" pada form roleplay.
+  const filtered = useMemo(() => {
+    if (!appliedDate) return filteredBase
+    const target = new Date(appliedDate).toDateString()
+    return filteredBase.filter((r) => r.tanggalPelaksanaanDate && r.tanggalPelaksanaanDate.toDateString() === target)
+  }, [filteredBase, appliedDate])
+
+  const appliedDateLabel = appliedDate ? formatIndoDate(new Date(appliedDate)) : ''
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-12">
@@ -75,6 +98,62 @@ export default function LiveResponse({ rows, status, lastSync, error, onRefresh 
           </span>
         </motion.div>
       )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.08 }}
+        className="mb-4"
+      >
+        <div className="panel flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-ink-faint">
+            <CalendarSearch size={14} />
+            Cari per Tanggal Pelaksanaan
+          </div>
+          <div className="flex flex-1 items-center gap-2">
+            <input
+              type="date"
+              value={dateInput}
+              onChange={(e) => setDateInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runDateSearch()}
+              className="rounded-lg border border-border bg-surface-raised py-2 px-3 text-sm text-ink focus:border-brand/50 focus:outline-none"
+            />
+            <button
+              onClick={runDateSearch}
+              disabled={!dateInput}
+              aria-label="Cari berdasarkan tanggal"
+              className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-void transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Search size={15} />
+              Cari
+            </button>
+            {appliedDate && (
+              <button
+                onClick={clearDateSearch}
+                aria-label="Hapus pencarian tanggal"
+                className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-xs text-ink-muted hover:border-fail/50 hover:text-fail"
+              >
+                <X size={13} /> Reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {appliedDate && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-2 flex items-center gap-2 rounded-xl border border-brand/20 bg-brand/5 p-3 text-sm text-ink-muted"
+            >
+              <Search size={14} className="text-brand" />
+              Ditemukan <strong className="text-ink">{filtered.length.toLocaleString('id-ID')} respons</strong> pada
+              tanggal pelaksanaan <strong className="text-ink">{appliedDateLabel}</strong>.
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
